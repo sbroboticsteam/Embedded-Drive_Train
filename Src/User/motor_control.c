@@ -17,11 +17,12 @@
 /*-----------------------------------------------------------------------
 - Private Defines & Macros
 -----------------------------------------------------------------------*/
-/** Take measurements of the wheel velocity every 1 ms **/
-#define MTR_VELOCITY_TIMESCALE	((uint16_t) 1)
-#define WHEEL_CIRCUMFERENCE			((float) 0.1)  // Meters
+/** Specifies how often to take motor velocity measurements in ms **/
+#define MTR_VELOCITY_TIMESCALE	((uint16_t) 500)
+/** Wheel circumference to calculate velocity in meters **/
+#define WHEEL_CIRCUMFERENCE			((float) 0.1)
+/** One full encoder revolution goes from 0 to 1023 **/
 #define ENCODER_TICKS_PER_REV		((uint16_t) 1024)
-
 /*-----------------------------------------------------------------------
 - Private Typedefs & Enumerations
 -----------------------------------------------------------------------*/
@@ -33,7 +34,6 @@ static motor_t motor_1;
 static motor_t motor_2;
 static motor_t motor_3;
 static motor_t motor_4;
-
 /*-----------------------------------------------------------------------
 - Private Function Prototypes
 -----------------------------------------------------------------------*/
@@ -47,6 +47,17 @@ static void encoder_on_off_helper(mtr_id_t mtr_id, mtr_status_t mtr_status);
 
 /*-----------------------------------------------------------------------
 - Public Functions
+-----------------------------------------------------------------------*/
+
+/*-----------------------------------------------------------------------
+-   motors_init
+-   Parameters:
+-     void
+-   Returns:
+-     void
+-   Description:
+-    	Initializes all motor structs with their respective pwm timer,
+-			encoder timer, and direction pin.
 -----------------------------------------------------------------------*/
 void motors_init(void) {
 	memset(&motor_1, 0, sizeof(motor_t));
@@ -82,19 +93,59 @@ void motors_init(void) {
 	motor_4.pwm.channel = TIM_CHANNEL_2;
 }
 
+/*-----------------------------------------------------------------------
+-   set_mtr_dir
+-   Parameters:
+-     mtr_id: Specify which motor to change direction of.
+-			dir: Direction you want the motor to go.
+-   Returns:
+-     void
+-   Description:
+-    	Set the motor to go forward or backwards
+-----------------------------------------------------------------------*/
 void set_mtr_dir(mtr_id_t mtr_id, direction_t dir) {
 	motor_t * motor = get_mtr(mtr_id);
 	HAL_GPIO_WritePin(motor->dir_ctrl.gpio_port, motor->dir_ctrl.gpio_pin, dir);
 }
 
+/*-----------------------------------------------------------------------
+-   set_mtr_dir
+-   Parameters:
+-     mtr_id: Specify which motor to get encoder count of.
+-   Returns:
+-     uint16_t: Motor's encoder count
+-   Description:
+-    	Get encoder count of a motor by reading CNT register of timer
+-----------------------------------------------------------------------*/
 uint16_t get_mtr_cnt(mtr_id_t mtr_id) {
 	return (uint16_t) get_mtr(mtr_id)->position.hencoder->Instance->CNT;
 }
 
+/*-----------------------------------------------------------------------
+-   get_mtr_velocity
+-   Parameters:
+-     mtr_id: Specify which motor to get velocity of.
+-   Returns:
+-     float: motor's velocity in m/s
+-   Description:
+-    	Get a motors velocity.
+-----------------------------------------------------------------------*/
 float get_mtr_velocity(mtr_id_t mtr_id) {
 	return get_mtr(mtr_id)->position.velocity;
 }
 
+/*-----------------------------------------------------------------------
+-   set_mtr_pwm
+-   Parameters:
+-     mtr_id: Specify which motor to set pwm of.
+-			pwm: value between 0 and 1 to set duty cycle of pwm
+-   Returns:
+-     void
+-   Description:
+-    	Set the timers CCR register to a percentage of its ARR register.
+-			Timer count 0 to CCR specifies PWM high, CCR to ARR specifies PWM
+-			low.
+-----------------------------------------------------------------------*/
 void set_mtr_pwm(mtr_id_t mtr_id, float pwm) {
 	motor_t * motor = get_mtr(mtr_id);
 
@@ -127,6 +178,16 @@ void set_mtr_pwm(mtr_id_t mtr_id, float pwm) {
 	}
 }
 
+/*-----------------------------------------------------------------------
+-   pwm_on_off
+-   Parameters:
+-     mtr_id: Specify which motor to turn pwm on/off.
+-			mtr_status: turn on or off.
+-   Returns:
+-     void
+-   Description:
+-    	Turns the pwm timer on/off.
+-----------------------------------------------------------------------*/
 void pwm_on_off(mtr_id_t mtr_id, mtr_status_t mtr_status) {
 	if (mtr_id == MTR_ALL) {
 		for (uint8_t i = 0; i < MTR_ALL; i++) {
@@ -138,6 +199,16 @@ void pwm_on_off(mtr_id_t mtr_id, mtr_status_t mtr_status) {
 	}
 }
 
+/*-----------------------------------------------------------------------
+-   encoder_on_off
+-   Parameters:
+-     mtr_id: Specify which motor to turn encoder on/off.
+-			mtr_status: turn on or off.
+-   Returns:
+-     void
+-   Description:
+-    	Turns the encoder timer on/off.
+-----------------------------------------------------------------------*/
 void encoder_on_off(mtr_id_t mtr_id, mtr_status_t mtr_status) {
 	if (mtr_id == MTR_ALL) {
 		for (uint8_t i = 0; i < MTR_ALL; i++) {
@@ -149,6 +220,17 @@ void encoder_on_off(mtr_id_t mtr_id, mtr_status_t mtr_status) {
 	}
 }
 
+/*-----------------------------------------------------------------------
+-   mtr_1ms_timeout
+-   Parameters:
+-     void
+-   Returns:
+-     void
+-   Description:
+-    	This function gets called every 1 ms by the SysTick timer. Once
+-			MTR_VELOCITY_TIMESCALE time has passed, we will update the velocity
+-			of each of the motors.
+-----------------------------------------------------------------------*/
 void mtr_1ms_timeout(void) {
 	static uint16_t time_passed = 0;
 
@@ -156,11 +238,22 @@ void mtr_1ms_timeout(void) {
 		for (uint8_t i = 0; i < MTR_ALL; i++) {
 			update_mtr_velocity(i);
 		}
+		time_passed = 0;
 	}
 }
 
 /*-----------------------------------------------------------------------
 - Private Functions
+-----------------------------------------------------------------------*/
+
+/*-----------------------------------------------------------------------
+-   get_mtr
+-   Parameters:
+-     mtr_id: Specify which motor struct to receive.
+-   Returns:
+-     motor_t *: Pointer to motor struct.
+-   Description:
+-    	Get the pointer to a motor struct
 -----------------------------------------------------------------------*/
 static motor_t * get_mtr(mtr_id_t mtr_id) {
 	switch (mtr_id) {
@@ -176,6 +269,16 @@ static motor_t * get_mtr(mtr_id_t mtr_id) {
 	}
 }
 
+/*-----------------------------------------------------------------------
+-   update_mtr_velocity
+-   Parameters:
+-     mtr_id: Specify which motor to update velocity of.
+-   Returns:
+-     void
+-   Description:
+-    	Updates the velocity of the motor based off of current and previous
+-			encoder counts and the circumference of our wheels.
+-----------------------------------------------------------------------*/
 static void update_mtr_velocity(mtr_id_t mtr_id) {
 	motor_t * motor = get_mtr(mtr_id);
 	int16_t change_in_encoder = motor->position.hencoder->Instance->CNT - motor->position.prev_encoder_cnt;
@@ -183,6 +286,7 @@ static void update_mtr_velocity(mtr_id_t mtr_id) {
 	motor->position.velocity = (percent_circum_moved * WHEEL_CIRCUMFERENCE) / MTR_VELOCITY_TIMESCALE;
 }
 
+/** See pwm_on_off, helper function to write cleaner code **/
 static void pwm_on_off_helper(mtr_id_t mtr_id, mtr_status_t mtr_status) {
 	motor_t * mtr = get_mtr(mtr_id);
 	if (mtr_status == MTR_OFF) {
@@ -193,6 +297,7 @@ static void pwm_on_off_helper(mtr_id_t mtr_id, mtr_status_t mtr_status) {
 	}
 }
 
+/** See encoder_on_off, helper function to write cleaner code **/
 static void encoder_on_off_helper(mtr_id_t mtr_id, mtr_status_t mtr_status) {
 	motor_t * mtr = get_mtr(mtr_id);
 	if (mtr_status == MTR_OFF) {
