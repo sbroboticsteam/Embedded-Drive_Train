@@ -35,7 +35,7 @@ typedef struct pwm {
 
 typedef struct position {
 	TIM_HandleTypeDef * hencoder;
-	uint32_t						prev_encoder_cnt;
+	__IO uint32_t				prev_encoder_cnt;
 	__IO float					velocity;
 	uint32_t						channel;
 } position_t;

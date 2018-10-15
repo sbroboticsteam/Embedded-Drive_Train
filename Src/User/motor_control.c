@@ -64,7 +64,7 @@ void motors_init(void) {
 	motor_1.dir_ctrl.gpio_port = MTR1_DIR_GPIO_Port;
 	motor_1.dir_ctrl.gpio_pin  = MTR1_DIR_Pin;
 	motor_1.position.hencoder = &htim4;
-	motor_3.position.channel = TIM_CHANNEL_1;
+	motor_1.position.channel = TIM_CHANNEL_1;
 	motor_1.pwm.hpwm = &htim10;
 	motor_1.pwm.channel = TIM_CHANNEL_1;
 
@@ -281,8 +281,37 @@ static motor_t * get_mtr(mtr_id_t mtr_id) {
 -----------------------------------------------------------------------*/
 static void update_mtr_velocity(mtr_id_t mtr_id) {
 	motor_t * motor = get_mtr(mtr_id);
-	int16_t change_in_encoder = motor->position.hencoder->Instance->CNT - motor->position.prev_encoder_cnt;
-	float percent_circum_moved = ENCODER_TICKS_PER_REV / change_in_encoder;
+	int16_t change_in_encoder;
+	uint32_t current_count = motor->position.hencoder->Instance->CNT;
+	uint32_t prev_count = motor->position.prev_encoder_cnt;
+	// Stop encoder before reading so it doesn't change during calculations
+	encoder_on_off(mtr_id, MTR_OFF);
+
+	// Need to account for possible roll over, check if direction is reverse
+	if (HAL_GPIO_ReadPin(motor->dir_ctrl.gpio_port, motor->dir_ctrl.gpio_pin) == GPIO_PIN_RESET) {
+		// Check if we rolled over if CNT is greater than prev_encoder_cnt when going reverse
+		if (current_count > prev_count) {
+			change_in_encoder = prev_count + ENCODER_TICKS_PER_REV - current_count;
+		}
+		else {
+			change_in_encoder = current_count - prev_count;
+		}
+
+	}
+	// Direction is forward
+	else {
+		// Check if we rolled over if CNT is less than our prev_encoder_cnt when going forward
+		if (motor->position.hencoder->Instance->CNT < motor->position.prev_encoder_cnt) {
+			change_in_encoder = current_count + ENCODER_TICKS_PER_REV - prev_count;
+		}
+		else {
+			change_in_encoder = current_count - prev_count;
+		}
+	}
+	motor->position.prev_encoder_cnt = current_count;
+
+	encoder_on_off(mtr_id, MTR_ON);
+	float percent_circum_moved =  change_in_encoder / (ENCODER_TICKS_PER_REV - 1);
 	motor->position.velocity = (percent_circum_moved * WHEEL_CIRCUMFERENCE) / MTR_VELOCITY_TIMESCALE;
 }
 

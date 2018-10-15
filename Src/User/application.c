@@ -77,7 +77,7 @@ void app_run(void) {
 
 
 	while (1) {
-		float speed = get_mtr_velocity(MTR1);
+		//float speed = get_mtr_velocity(MTR1);
 		HAL_UART_Transmit(&huart2, (uint8_t*)encoder_data, strlen(encoder_data), 0xFFFF);
 		set_mtr_dir(MTR1, change_dir);
 		set_mtr_pwm(MTR1, pwm_val);
