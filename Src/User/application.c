@@ -63,7 +63,8 @@ typedef struct comm_msg {
 -    	Our main loop for the application code.
 -----------------------------------------------------------------------*/
 void app_run(void) {
-	char encoder_data[64];
+	char printer[64];
+
 	motors_init();
 	float pwm_val = .5;
 	direction_t change_dir = FORWARD;
@@ -74,11 +75,13 @@ void app_run(void) {
 	pwm_on_off(MTR_ALL, MTR_ON);
 	encoder_on_off(MTR_ALL, MTR_ON);
 
-
-
+	uint16_t counter = 0;
 	while (1) {
-		//float speed = get_mtr_velocity(MTR1);
-		HAL_UART_Transmit(&huart2, (uint8_t*)encoder_data, strlen(encoder_data), 0xFFFF);
+		if (counter++ == 1000) {
+			uint16_t rpm = (uint16_t)get_mtr_rpm(MTR1);
+			sprintf(printer, "RPM: %d\n", rpm);
+			HAL_UART_Transmit(&huart2, (uint8_t *)printer, strlen(printer), 0xFFFF);
+		}
 		set_mtr_dir(MTR1, change_dir);
 		set_mtr_pwm(MTR1, pwm_val);
 	}

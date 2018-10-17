@@ -36,7 +36,7 @@ typedef struct pwm {
 typedef struct position {
 	TIM_HandleTypeDef * hencoder;
 	__IO uint32_t				prev_encoder_cnt;
-	__IO float					velocity;
+	__IO float					rpm;
 	uint32_t						channel;
 } position_t;
 
@@ -75,7 +75,7 @@ void motors_init(void);
 uint16_t get_mtr_cnt(mtr_id_t mtr_id);
 void set_mtr_pwm(mtr_id_t mtr_id, float pwm);
 void set_mtr_dir(mtr_id_t mtr_id, direction_t dir);
-float get_mtr_velocity(mtr_id_t mtr_id);
+float get_mtr_rpm(mtr_id_t mtr_id);
 void pwm_on_off(mtr_id_t mtr_id, mtr_status_t mtr_status);
 void encoder_on_off(mtr_id_t mtr_id, mtr_status_t mtr_status);
 void mtr_1ms_timeout(void);

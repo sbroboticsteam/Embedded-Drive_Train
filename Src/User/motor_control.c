@@ -17,10 +17,8 @@
 /*-----------------------------------------------------------------------
 - Private Defines & Macros
 -----------------------------------------------------------------------*/
-/** Specifies how often to take motor velocity measurements in ms **/
-#define MTR_VELOCITY_TIMESCALE	((uint16_t) 500)
-/** Wheel circumference to calculate velocity in meters **/
-#define WHEEL_CIRCUMFERENCE			((float) 0.1)
+/** Specifies how often to take motor RPM measurements in ms **/
+#define MTR_RPM_TIMESCALE	((uint16_t) 50)
 /** One full encoder revolution goes from 0 to 1023 **/
 #define ENCODER_TICKS_PER_REV		((uint16_t) 1024)
 /*-----------------------------------------------------------------------
@@ -38,7 +36,7 @@ static motor_t motor_4;
 - Private Function Prototypes
 -----------------------------------------------------------------------*/
 static motor_t * get_mtr(mtr_id_t mtr_id);
-static void update_mtr_velocity(mtr_id_t mtr_id);
+static void update_mtr_rpm(mtr_id_t mtr_id);
 static void pwm_on_off_helper(mtr_id_t mtr_id, mtr_status_t mtr_status);
 static void encoder_on_off_helper(mtr_id_t mtr_id, mtr_status_t mtr_status);
 /*-----------------------------------------------------------------------
@@ -122,16 +120,16 @@ uint16_t get_mtr_cnt(mtr_id_t mtr_id) {
 }
 
 /*-----------------------------------------------------------------------
--   get_mtr_velocity
+-   get_mtr_rpm
 -   Parameters:
--     mtr_id: Specify which motor to get velocity of.
+-     mtr_id: Specify which motor to get rpm of.
 -   Returns:
--     float: motor's velocity in m/s
+-     float: motor's rpm in m/s
 -   Description:
--    	Get a motors velocity.
+-    	Get a motors rpm.
 -----------------------------------------------------------------------*/
-float get_mtr_velocity(mtr_id_t mtr_id) {
-	return get_mtr(mtr_id)->position.velocity;
+float get_mtr_rpm(mtr_id_t mtr_id) {
+	return get_mtr(mtr_id)->position.rpm;
 }
 
 /*-----------------------------------------------------------------------
@@ -228,15 +226,15 @@ void encoder_on_off(mtr_id_t mtr_id, mtr_status_t mtr_status) {
 -     void
 -   Description:
 -    	This function gets called every 1 ms by the SysTick timer. Once
--			MTR_VELOCITY_TIMESCALE time has passed, we will update the velocity
+-			MTR_RPM_TIMESCALE time has passed, we will update the rpm
 -			of each of the motors.
 -----------------------------------------------------------------------*/
 void mtr_1ms_timeout(void) {
 	static uint16_t time_passed = 0;
 
-	if (time_passed++ == MTR_VELOCITY_TIMESCALE) {
+	if (time_passed++ == MTR_RPM_TIMESCALE) {
 		for (uint8_t i = 0; i < MTR_ALL; i++) {
-			update_mtr_velocity(i);
+			update_mtr_rpm(i);
 		}
 		time_passed = 0;
 	}
@@ -270,16 +268,16 @@ static motor_t * get_mtr(mtr_id_t mtr_id) {
 }
 
 /*-----------------------------------------------------------------------
--   update_mtr_velocity
+-   update_mtr_rpm
 -   Parameters:
--     mtr_id: Specify which motor to update velocity of.
+-     mtr_id: Specify which motor to update rpm of.
 -   Returns:
 -     void
 -   Description:
--    	Updates the velocity of the motor based off of current and previous
+-    	Updates the rpm of the motor based off of current and previous
 -			encoder counts and the circumference of our wheels.
 -----------------------------------------------------------------------*/
-static void update_mtr_velocity(mtr_id_t mtr_id) {
+static void update_mtr_rpm(mtr_id_t mtr_id) {
 	motor_t * motor = get_mtr(mtr_id);
 	int16_t change_in_encoder;
 	uint32_t current_count = motor->position.hencoder->Instance->CNT;
@@ -296,7 +294,6 @@ static void update_mtr_velocity(mtr_id_t mtr_id) {
 		else {
 			change_in_encoder = current_count - prev_count;
 		}
-
 	}
 	// Direction is forward
 	else {
@@ -311,8 +308,9 @@ static void update_mtr_velocity(mtr_id_t mtr_id) {
 	motor->position.prev_encoder_cnt = current_count;
 
 	encoder_on_off(mtr_id, MTR_ON);
-	float percent_circum_moved =  change_in_encoder / (ENCODER_TICKS_PER_REV - 1);
-	motor->position.velocity = (percent_circum_moved * WHEEL_CIRCUMFERENCE) / MTR_VELOCITY_TIMESCALE;
+	float rotations =  change_in_encoder / (float)(ENCODER_TICKS_PER_REV - 1);
+	// Rotations per ms multiplied by ms per min
+	motor->position.rpm = (rotations / MTR_RPM_TIMESCALE) * 60000;
 }
 
 /** See pwm_on_off, helper function to write cleaner code **/
