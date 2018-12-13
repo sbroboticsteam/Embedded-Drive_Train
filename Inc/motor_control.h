@@ -24,44 +24,44 @@
 - Public Typedefs & Enumerations
 -----------------------------------------------------------------------*/
 typedef struct dir_ctrl {
-	GPIO_TypeDef *	gpio_port;
-	uint16_t 				gpio_pin;
+  GPIO_TypeDef *        gpio_port;
+  uint16_t 	        gpio_pin;
 } dir_ctrl_t;
 
 typedef struct pwm {
-	TIM_HandleTypeDef * hpwm;
-	uint32_t channel;
+  TIM_HandleTypeDef *   hpwm;
+  uint32_t              channel;
 } pwm_t;
 
 typedef struct position {
-	TIM_HandleTypeDef * hencoder;
-	__IO uint32_t				prev_encoder_cnt;
-	__IO float					rpm;
-	uint32_t						channel;
+  TIM_HandleTypeDef *   hencoder;
+  __IO uint32_t         prev_encoder_cnt;
+  __IO float		rpm;
+  uint32_t		channel;
 } position_t;
 
 typedef struct motor {
-	dir_ctrl_t dir_ctrl;
-	pwm_t pwm;
-	position_t position;
+  dir_ctrl_t dir_ctrl;
+  pwm_t pwm;
+  position_t position;
 } motor_t;
 
 typedef enum direction {
-	REVERSE = 0x00,
-	FORWARD = 0x01,
+  REVERSE = 0x00,
+  FORWARD = 0x01,
 } direction_t;
 
 typedef enum mtr_status {
-	MTR_OFF = 0x00,
-	MTR_ON  = 0x01,
+  MTR_OFF = 0x00,
+  MTR_ON  = 0x01,
 } mtr_status_t;
 
 typedef enum mtr_id {
-	MTR1 = 0,
-	MTR2,
-	MTR3,
-	MTR4,
-	MTR_ALL,
+  MTR1 = 0,
+  MTR2,
+  MTR3,
+  MTR4,
+  MTR_ALL,
 } mtr_id_t;
 
 /*-----------------------------------------------------------------------

@@ -45,7 +45,7 @@
 #include "gpio.h"
 
 /* USER CODE BEGIN Includes */
-#include "application.h"
+
 /* USER CODE END Includes */
 
 /* Private variables ---------------------------------------------------------*/
@@ -101,15 +101,12 @@ int main(void)
   MX_TIM4_Init();
   MX_TIM8_Init();
   MX_USART2_UART_Init();
-//  MX_CAN1_Init();
+  MX_CAN1_Init();
   MX_TIM2_Init();
   MX_TIM5_Init();
   MX_TIM10_Init();
   MX_TIM12_Init();
   /* USER CODE BEGIN 2 */
-
-  /** Don't want to write code in this mess, run in application.c **/
-  app_run();
 
   /* USER CODE END 2 */
 
