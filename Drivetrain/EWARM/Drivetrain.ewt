@@ -1196,7 +1196,7 @@
         <group>
             <name>User</name>
             <group>
-                <name>Application</name>
+                <name>Foreground</name>
                 <file>
                     <name>$PROJ_DIR$\..\..\Src\application.c</name>
                 </file>
