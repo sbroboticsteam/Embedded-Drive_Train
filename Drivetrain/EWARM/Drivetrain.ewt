@@ -1196,17 +1196,20 @@
         <group>
             <name>User</name>
             <group>
-                <name>Foreground</name>
-                <file>
-                    <name>$PROJ_DIR$\..\..\Src\application.c</name>
-                </file>
-            </group>
-            <group>
                 <name>Motors</name>
                 <file>
                     <name>$PROJ_DIR$\..\..\Src\motor_control.c</name>
                 </file>
             </group>
+            <group>
+                <name>Radio</name>
+                <file>
+                    <name>$PROJ_DIR$\..\..\Src\radio_control.c</name>
+                </file>
+            </group>
+            <file>
+                <name>$PROJ_DIR$\..\..\Src\application.c</name>
+            </file>
             <file>
                 <name>$PROJ_DIR$\..\..\Src\can.c</name>
             </file>
@@ -1218,6 +1221,9 @@
             </file>
             <file>
                 <name>$PROJ_DIR$\..\..\Src\stm32f4xx_hal_msp.c</name>
+            </file>
+            <file>
+                <name>$PROJ_DIR$\..\..\Src\stm32f4xx_hal_timebase_TIM.c</name>
             </file>
             <file>
                 <name>$PROJ_DIR$\..\..\Src\stm32f4xx_it.c</name>

@@ -15,55 +15,26 @@
 #include <stdint.h>
 #include "stm32f446xx.h"
 #include "tim.h"
-
+#include "arm_math.h"
 /*-----------------------------------------------------------------------
 - Public Defines & Macros
 -----------------------------------------------------------------------*/
-
+/** Number of motors on the rover **/
+#define MTR_COUNT                       ((uint8_t) 4)
 /*-----------------------------------------------------------------------
 - Public Typedefs & Enumerations
 -----------------------------------------------------------------------*/
-typedef struct dir_ctrl {
-  GPIO_TypeDef *        gpio_port;
-  uint16_t 	        gpio_pin;
-} dir_ctrl_t;
-
-typedef struct pwm {
-  TIM_HandleTypeDef *   hpwm;
-  uint32_t              channel;
-} pwm_t;
-
-typedef struct position {
-  TIM_HandleTypeDef *   hencoder;
-  __IO uint32_t         prev_encoder_cnt;
-  __IO float		rpm;
-  uint32_t		channel;
-} position_t;
-
-typedef struct motor {
-  dir_ctrl_t dir_ctrl;
-  pwm_t pwm;
-  position_t position;
-} motor_t;
-
 typedef enum direction {
   REVERSE = 0x00,
   FORWARD = 0x01,
 } direction_t;
 
-typedef enum mtr_status {
-  MTR_OFF = 0x00,
-  MTR_ON  = 0x01,
-} mtr_status_t;
-
-typedef enum mtr_id {
-  MTR1 = 0,
-  MTR2,
-  MTR3,
-  MTR4,
-  MTR_ALL,
-} mtr_id_t;
-
+typedef enum mtr_num {
+  MTR_0 = 0,
+  MTR_1 = 1,
+  MTR_2 = 2,
+  MTR_3 = 3,
+} mtr_num_t;
 /*-----------------------------------------------------------------------
 - Public External References
 -----------------------------------------------------------------------*/
@@ -71,13 +42,10 @@ typedef enum mtr_id {
 /*-----------------------------------------------------------------------
 - Public Function Prototypes
 -----------------------------------------------------------------------*/
+void motor_task(void);
 void motors_init(void);
-uint16_t get_mtr_cnt(mtr_id_t mtr_id);
-void set_mtr_pwm(mtr_id_t mtr_id, float pwm);
-void set_mtr_dir(mtr_id_t mtr_id, direction_t dir);
-float get_mtr_rpm(mtr_id_t mtr_id);
-void pwm_on_off(mtr_id_t mtr_id, mtr_status_t mtr_status);
-void encoder_on_off(mtr_id_t mtr_id, mtr_status_t mtr_status);
-void mtr_1ms_timeout(void);
+uint16_t get_mtr_cnt(mtr_num_t mtr_num);
+void set_mtr_pwm_dir(mtr_num_t mtr_num, uint32_t pwm, direction_t dir);
+float get_mtr_rpm(mtr_num_t mtr_num);
 
 #endif /* __MOTOR_CONTROL_H */

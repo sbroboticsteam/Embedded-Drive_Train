@@ -862,7 +862,7 @@
                 <expressions>
                     <item>mtr_timer-&gt;Instance</item>
                     <item>pwm_val</item>
-                    <item></item>
+                    <item />
                 </expressions>
                 <col-names>
                     <item>Expression</item>

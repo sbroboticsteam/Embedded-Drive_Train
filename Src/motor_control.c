@@ -11,34 +11,73 @@
 -----------------------------------------------------------------------*/
 #include <stdint.h>
 #include <string.h>
+#include <math.h>
+#include "timing.h"
 #include "gpio.h"
 #include "motor_control.h"
 #include "tim.h"
+
+#ifdef DEBUG
+#include <string.h>
+#endif /* DEBUG */
 /*-----------------------------------------------------------------------
 - Private Defines & Macros
 -----------------------------------------------------------------------*/
 /** Specifies how often to take motor RPM measurements in ms **/
-#define MTR_RPM_TIMESCALE	((uint16_t) 50)
-/** One full encoder revolution goes from 0 to 1023 **/
-#define ENCODER_TICKS_PER_REV		((uint16_t) 1024)
+#define MTR_RPM_TIMESCALE	        ((uint16_t) 50)
+/** One full encoder revolution goes from 0 to 2047 **/
+#define ENCODER_TICKS_PER_REV		((uint16_t) 2048)
 /*-----------------------------------------------------------------------
 - Private Typedefs & Enumerations
 -----------------------------------------------------------------------*/
+typedef enum {
+  MOTOR_INIT,
+  MOTORS_RUN,
+} motor_state_t;
 
+typedef struct dir_ctrl {
+  GPIO_TypeDef *        gpio_port;
+  uint16_t 	        gpio_pin;
+  direction_t           dir;
+  direction_t           dir_goal;
+} dir_ctrl_t;
+
+typedef struct pwm {
+  uint32_t      pwm_channel;
+  uint32_t      pwm_val;
+  uint32_t      pwm_goal;
+  timer_t       pwm_timer;
+} pwm_t;
+
+typedef struct mtr_encoder {
+  TIM_HandleTypeDef *   hencoder;
+  __IO uint32_t         prev_encoder_cnt;
+  uint32_t		channel;
+} mtr_encoder_t;
+
+typedef struct motor {
+  dir_ctrl_t    dir_ctrl;
+  pwm_t         pwm;
+  mtr_encoder_t position;
+  float         rpm;
+} motor_t;
 /*-----------------------------------------------------------------------
 - Private Variables
 -----------------------------------------------------------------------*/
-static motor_t motor_1;
-static motor_t motor_2;
-static motor_t motor_3;
-static motor_t motor_4;
+static motor_t  motors[MTR_COUNT];
+/** Ramp the pwm up/down every 50 ms by MTR_PWM_RAMP amount **/
+static uint8_t  mtr_pwm_period = 50;
+/** Amount to ramp the pwm up/down after MTR_PWM_PERIOD **/
+static uint16_t mtr_pwm_ramp = 420;
 /*-----------------------------------------------------------------------
 - Private Function Prototypes
 -----------------------------------------------------------------------*/
-static motor_t * get_mtr(mtr_id_t mtr_id);
-static void update_mtr_rpm(mtr_id_t mtr_id);
-static void pwm_on_off_helper(mtr_id_t mtr_id, mtr_status_t mtr_status);
-static void encoder_on_off_helper(mtr_id_t mtr_id, mtr_status_t mtr_status);
+static void update_rpm(void);
+
+static bool adjust_pwm(mtr_num_t mtr_num);
+static void set_pwm(mtr_num_t mtr_num, uint32_t pwm);
+
+static void set_dir(mtr_num_t mtr_num, direction_t dir);
 /*-----------------------------------------------------------------------
 - Private External References
 -----------------------------------------------------------------------*/
@@ -48,6 +87,72 @@ static void encoder_on_off_helper(mtr_id_t mtr_id, mtr_status_t mtr_status);
 -----------------------------------------------------------------------*/
 
 /*-----------------------------------------------------------------------
+-   motor_task
+-   Parameters:
+-     void
+-   Returns:
+-     void
+-   Description:
+-    	The task that will be continously running to control the motors.
+-----------------------------------------------------------------------*/
+void motor_task(void) {
+  static motor_state_t motor_state = MOTOR_INIT;
+  static timer_t rpm_timer;
+
+  switch (motor_state) {
+    case MOTOR_INIT: {
+      /* Set up the pwm and encoder timers for the motors and start them */
+      motors_init();
+
+      /* Set the rpm timer to expire in MTR_RPM_TIMESCALE ms from now */
+      set_timer(&rpm_timer, MTR_RPM_TIMESCALE);
+
+      /* Motors are now operational */
+      motor_state = MOTORS_RUN;
+      break;
+    }
+    case MOTORS_RUN: {
+      /* Check if we should calculate new rpm values */
+      if (timeout(&rpm_timer)) {
+        /* Set the rpm timer to trigger again in MTR_RPM_TIMESCALE ms from now */
+        set_timer(&rpm_timer, MTR_RPM_TIMESCALE);
+
+        /* Calculate the new rpm values */
+        update_rpm();
+
+        /* Output of motor values for debugging purposes */
+#ifdef DEBUG
+        printf("Motor 0 RPM: %3.5f\n", motors[MTR_0].pid.rpm);
+#endif /* DEBUG */
+      }
+
+      /* Check if we need to ramp up/down our pwm values */
+      for (mtr_num_t mtr = MTR_0; mtr < MTR_COUNT; mtr++) {
+        /* Check if the ramp pwm timer has timed out */
+        if (timeout(&motors[mtr].pwm.pwm_timer)) {
+          /* Slightly adjust the pwm of that motor, if it needs to be adjusted
+             again, set the timer */
+          if (adjust_pwm(mtr)) {
+            set_timer(&motors[mtr].pwm.pwm_timer, mtr_pwm_period);
+          }
+          else {
+            stop_timer(&motors[mtr].pwm.pwm_timer);
+          }
+        }
+        /* else PWM is at the correct value */
+      }
+
+      break;
+    }
+    default: {
+      /* Should never enter this, but if we do assume the worst and re-init */
+      motor_state = MOTOR_INIT;
+      break;
+    }
+  }
+}
+
+/*-----------------------------------------------------------------------
 -   motors_init
 -   Parameters:
 -     void
@@ -55,196 +160,101 @@ static void encoder_on_off_helper(mtr_id_t mtr_id, mtr_status_t mtr_status);
 -     void
 -   Description:
 -    	Initializes all motor structs with their respective pwm timer,
--			encoder timer, and direction pin.
+-	encoder timer, and direction pin.
 -----------------------------------------------------------------------*/
 void motors_init(void) {
-  memset(&motor_1, 0, sizeof(motor_t));
-  motor_1.dir_ctrl.gpio_port = MTR1_DIR_GPIO_Port;
-  motor_1.dir_ctrl.gpio_pin  = MTR1_DIR_Pin;
-  motor_1.position.hencoder = &htim4;
-  motor_1.position.channel = TIM_CHANNEL_1;
-  motor_1.pwm.hpwm = &htim10;
-  motor_1.pwm.channel = TIM_CHANNEL_1;
+  memset(motors, 0, sizeof(motors));
 
-  memset(&motor_2, 0, sizeof(motor_2));
-  motor_2.dir_ctrl.gpio_port = MTR2_DIR_GPIO_Port;
-  motor_2.dir_ctrl.gpio_pin  = MTR2_DIR_Pin;
-  motor_2.position.hencoder = &htim3;
-  motor_2.position.channel = TIM_CHANNEL_2;
-  motor_2.pwm.hpwm = &htim5;
-  motor_2.pwm.channel = TIM_CHANNEL_2;
+  /* Set the port and pin used to control the direction of the motor */
+  motors[MTR_0].dir_ctrl.gpio_port = MTR0_DIR_GPIO_Port;
+  motors[MTR_0].dir_ctrl.gpio_pin  = MTR0_DIR_Pin;
+  /* Set the timer used to handle the encoder and its channel */
+  motors[MTR_0].position.hencoder = &htim4;
+  motors[MTR_0].position.channel = TIM_CHANNEL_1;
+  /* Set the channel of the pwm timer used for the motor */
+  motors[MTR_0].pwm.pwm_channel = TIM_CHANNEL_1;
+  motors[MTR_0].pwm.pwm_val = 0;
 
-  memset(&motor_3, 0, sizeof(motor_t));
-  motor_3.dir_ctrl.gpio_port = MTR2_DIR_GPIO_Port;
-  motor_3.dir_ctrl.gpio_pin  = MTR2_DIR_Pin;
-  motor_3.position.hencoder = &htim8;
-  motor_3.position.channel = TIM_CHANNEL_2;
-  motor_3.pwm.hpwm = &htim2;
-  motor_3.pwm.channel = TIM_CHANNEL_4;
+  motors[MTR_1].dir_ctrl.gpio_port = MTR1_DIR_GPIO_Port;
+  motors[MTR_1].dir_ctrl.gpio_pin  = MTR1_DIR_Pin;
+  motors[MTR_1].position.hencoder = &htim3;
+  motors[MTR_1].position.channel = TIM_CHANNEL_1;
+  motors[MTR_1].pwm.pwm_channel = TIM_CHANNEL_2;
+  motors[MTR_1].pwm.pwm_val = 0;
 
-  memset(&motor_4, 0, sizeof(motor_t));
-  motor_4.dir_ctrl.gpio_port = MTR2_DIR_GPIO_Port;
-  motor_4.dir_ctrl.gpio_pin  = MTR2_DIR_Pin;
-  motor_4.position.hencoder = &htim1;
-  motor_4.position.channel = TIM_CHANNEL_2;
-  motor_4.pwm.hpwm = &htim12;
-  motor_4.pwm.channel = TIM_CHANNEL_2;
+  motors[MTR_2].dir_ctrl.gpio_port = MTR2_DIR_GPIO_Port;
+  motors[MTR_2].dir_ctrl.gpio_pin  = MTR2_DIR_Pin;
+  motors[MTR_2].position.hencoder = &htim8;
+  motors[MTR_2].position.channel = TIM_CHANNEL_1;
+  motors[MTR_2].pwm.pwm_channel = TIM_CHANNEL_3;
+  motors[MTR_2].pwm.pwm_val = 0;
+
+  motors[MTR_3].dir_ctrl.gpio_port = MTR3_DIR_GPIO_Port;
+  motors[MTR_3].dir_ctrl.gpio_pin  = MTR3_DIR_Pin;
+  motors[MTR_3].position.hencoder = &htim1;
+  motors[MTR_3].position.channel = TIM_CHANNEL_1;
+  motors[MTR_3].pwm.pwm_channel = TIM_CHANNEL_4;
+  motors[MTR_3].pwm.pwm_val = 0;
+
+  /* Turn on PWM timers for all motors */
+  for (mtr_num_t mtr = MTR_0; mtr < MTR_COUNT; mtr++) {
+    HAL_TIM_PWM_Start(&htim2, motors[mtr].pwm.pwm_channel);
+  }
+
+  /* Turn on encoder timers for all motors */
+  for (mtr_num_t mtr = MTR_0; mtr < MTR_COUNT; mtr++) {
+    HAL_TIM_Encoder_Start(motors[mtr].position.hencoder, motors[mtr].position.channel);
+  }
 }
 
 /*-----------------------------------------------------------------------
--   set_mtr_dir
+-   get_mtr_cnt
 -   Parameters:
--     mtr_id: Specify which motor to change direction of.
--			dir: Direction you want the motor to go.
--   Returns:
--     void
--   Description:
--    	Set the motor to go forward or backwards
------------------------------------------------------------------------*/
-void set_mtr_dir(mtr_id_t mtr_id, direction_t dir) {
-  motor_t * motor = get_mtr(mtr_id);
-  GPIO_PinState pin_state = (dir == FORWARD)? GPIO_PIN_SET : GPIO_PIN_RESET;
-  HAL_GPIO_WritePin(motor->dir_ctrl.gpio_port, motor->dir_ctrl.gpio_pin, pin_state);
-}
-
-/*-----------------------------------------------------------------------
--   set_mtr_dir
--   Parameters:
--     mtr_id: Specify which motor to get encoder count of.
+-     mtr_num: Specify which motor to get encoder count of.
 -   Returns:
 -     uint16_t: Motor's encoder count
 -   Description:
 -    	Get encoder count of a motor by reading CNT register of timer
 -----------------------------------------------------------------------*/
-uint16_t get_mtr_cnt(mtr_id_t mtr_id) {
-  return (uint16_t) get_mtr(mtr_id)->position.hencoder->Instance->CNT;
+uint16_t get_mtr_cnt(mtr_num_t mtr_num) {
+  return motors[mtr_num].position.hencoder->Instance->CNT;
 }
 
 /*-----------------------------------------------------------------------
 -   get_mtr_rpm
 -   Parameters:
--     mtr_id: Specify which motor to get rpm of.
+-     mtr_num: Specify which motor to get rpm of.
 -   Returns:
--     float: motor's rpm in m/s
+-     float: motor's rpm
 -   Description:
--    	Get a motors rpm.
+-     Get a motors rpm.
 -----------------------------------------------------------------------*/
-float get_mtr_rpm(mtr_id_t mtr_id) {
-  return get_mtr(mtr_id)->position.rpm;
+float get_mtr_rpm(mtr_num_t mtr_num) {
+  return motors[mtr_num].rpm;
 }
 
 /*-----------------------------------------------------------------------
--   set_mtr_pwm
+-   set_mtr_pwm_dir
 -   Parameters:
--     mtr_id: Specify which motor to set pwm of.
--			pwm: value between 0 and 1 to set duty cycle of pwm
+-     mtr_num: Specify which motor to set the pwm and direction of
+-     pwm: PWM value to set
+-     dir: Direction to set
 -   Returns:
 -     void
 -   Description:
--    	Set the timers CCR register to a percentage of its ARR register.
--			Timer count 0 to CCR specifies PWM high, CCR to ARR specifies PWM
--			low.
+-     Sets a PWM and direction goal for a motor and accelerates towards
+-     that goal.
 -----------------------------------------------------------------------*/
-void set_mtr_pwm(mtr_id_t mtr_id, float pwm) {
-  motor_t * motor = get_mtr(mtr_id);
-
-  if (pwm < 0) {
-    pwm = 0;
-  }
-  else if (pwm > 1.0) {
-    pwm = 1;
+void set_mtr_pwm_dir(mtr_num_t mtr_num, uint32_t pwm, direction_t dir) {
+  /* Check if the passed pwm parameter is invalid */
+  if (pwm > htim2.Instance->ARR) {
+    pwm = htim2.Instance->ARR;
   }
 
-  switch (motor->pwm.channel) {
-  case TIM_CHANNEL_1: {
-    motor->pwm.hpwm->Instance->CCR1 = (uint32_t) (motor->pwm.hpwm->Instance->ARR * pwm);
-    break;
-  }
-  case TIM_CHANNEL_2: {
-    motor->pwm.hpwm->Instance->CCR2 = (uint32_t) (motor->pwm.hpwm->Instance->ARR * pwm);
-    break;
-  }
-  case TIM_CHANNEL_3: {
-    motor->pwm.hpwm->Instance->CCR3 = (uint32_t) (motor->pwm.hpwm->Instance->ARR * pwm);
-    break;
-  }
-  case TIM_CHANNEL_4: {
-    motor->pwm.hpwm->Instance->CCR4 = (uint32_t) (motor->pwm.hpwm->Instance->ARR * pwm);
-    break;
-  }
-  default:
-    break;
-  }
-}
-
-/*-----------------------------------------------------------------------
--   pwm_on_off
--   Parameters:
--     mtr_id: Specify which motor to turn pwm on/off.
--			mtr_status: turn on or off.
--   Returns:
--     void
--   Description:
--    	Turns the pwm timer on/off.
------------------------------------------------------------------------*/
-void pwm_on_off(mtr_id_t mtr_id, mtr_status_t mtr_status) {
-  if (mtr_id == MTR_ALL) {
-    mtr_id_t id;
-    for (uint8_t i = 0; i < MTR_ALL; i++) {
-      id = (mtr_id_t) (MTR1 + i);
-      pwm_on_off_helper(id, mtr_status);
-    }
-  }
-  else {
-    pwm_on_off_helper(mtr_id, mtr_status);
-  }
-}
-
-/*-----------------------------------------------------------------------
--   encoder_on_off
--   Parameters:
--     mtr_id: Specify which motor to turn encoder on/off.
--			mtr_status: turn on or off.
--   Returns:
--     void
--   Description:
--    	Turns the encoder timer on/off.
------------------------------------------------------------------------*/
-void encoder_on_off(mtr_id_t mtr_id, mtr_status_t mtr_status) {
-  if (mtr_id == MTR_ALL) {
-    mtr_id_t id;
-    for (uint8_t i = 0; i < MTR_ALL; i++) {
-      id = (mtr_id_t) (MTR1 + i);
-      encoder_on_off_helper(id, mtr_status);
-    }
-  }
-  else {
-    encoder_on_off_helper(mtr_id, mtr_status);
-  }
-}
-
-/*-----------------------------------------------------------------------
--   mtr_1ms_timeout
--   Parameters:
--     void
--   Returns:
--     void
--   Description:
--    	This function gets called every 1 ms by the SysTick timer. Once
--			MTR_RPM_TIMESCALE time has passed, we will update the rpm
--			of each of the motors.
------------------------------------------------------------------------*/
-void mtr_1ms_timeout(void) {
-  static uint16_t time_passed = 0;
-
-  if (time_passed++ == MTR_RPM_TIMESCALE) {
-    mtr_id_t id;
-    for (uint8_t i = 0; i < MTR_ALL; i++) {
-      id = (mtr_id_t) i;
-      update_mtr_rpm(id);
-    }
-    time_passed = 0;
-  }
+  /* Set the new desired pwm value and direction */
+  /* These values are set as goals and we ramp to them using a configurable acceleration */
+  motors[mtr_num].pwm.pwm_goal      = pwm;
+  motors[mtr_num].dir_ctrl.dir_goal = dir;
 }
 
 /*-----------------------------------------------------------------------
@@ -252,92 +262,170 @@ void mtr_1ms_timeout(void) {
 -----------------------------------------------------------------------*/
 
 /*-----------------------------------------------------------------------
--   get_mtr
+-   set_dir
 -   Parameters:
--     mtr_id: Specify which motor struct to receive.
+-     mtr_num: Specify which motor to change direction of.
+-     dir: Direction you want the motor to go.
 -   Returns:
--     motor_t *: Pointer to motor struct.
+-     void
 -   Description:
--    	Get the pointer to a motor struct
+-     Set the motor to go forward or backwards
 -----------------------------------------------------------------------*/
-static motor_t * get_mtr(mtr_id_t mtr_id) {
-  switch (mtr_id) {
-  case MTR1:
-    return &motor_1;
-  case MTR2:
-    return &motor_2;
-  case MTR3:
-    return &motor_3;
-  case MTR4:
-  default:
-    return &motor_4;
+static void set_dir(mtr_num_t mtr_num, direction_t dir) {
+  HAL_GPIO_WritePin(motors[mtr_num].dir_ctrl.gpio_port, motors[mtr_num].dir_ctrl.gpio_pin, (GPIO_PinState) dir);
+  motors[mtr_num].dir_ctrl.dir = dir;
+}
+
+/*-----------------------------------------------------------------------
+-   set_pwm
+-   Parameters:
+-     mtr_num: Specify which motor to set pwm of.
+-     pwm: value between 0 and ARR to set the duty cycle
+-   Returns:
+-     void
+-   Description:
+-      Set the timers CCR register to the new pwm value. Timer count 0 to CCR 
+-      specifies PWM high, CCR to ARR specifies PWM low.
+-----------------------------------------------------------------------*/
+static void set_pwm(mtr_num_t mtr_num, uint32_t pwm) {
+  switch (motors[mtr_num].pwm.pwm_channel) {
+    case TIM_CHANNEL_1: {
+      htim2.Instance->CCR1 = pwm;
+      break;
+    }
+    case TIM_CHANNEL_2: {
+      htim2.Instance->CCR2 = pwm;
+      break;
+    }
+    case TIM_CHANNEL_3: {
+      htim2.Instance->CCR3 = pwm;
+      break;
+    }
+    case TIM_CHANNEL_4: {
+      htim2.Instance->CCR4 = pwm;
+      break;
+    }
+    default: {
+      break;
+    }
   }
 }
 
 /*-----------------------------------------------------------------------
--   update_mtr_rpm
+-   update_rpm
 -   Parameters:
--     mtr_id: Specify which motor to update rpm of.
+-     void
 -   Returns:
 -     void
 -   Description:
--    	Updates the rpm of the motor based off of current and previous
--			encoder counts and the circumference of our wheels.
+-     Updates the rpm of all the motors based off of current and previous
+-     encoder counts.
 -----------------------------------------------------------------------*/
-static void update_mtr_rpm(mtr_id_t mtr_id) {
-  motor_t * motor = get_mtr(mtr_id);
-  int16_t change_in_encoder;
-  uint32_t current_count = motor->position.hencoder->Instance->CNT;
-  uint32_t prev_count = motor->position.prev_encoder_cnt;
-  // Stop encoder before reading so it doesn't change during calculations
-  encoder_on_off(mtr_id, MTR_OFF);
+static void update_rpm(void) {
+  for (mtr_num_t mtr = MTR_0; mtr < MTR_COUNT; mtr++) {
+    int16_t change_in_encoder;
+    uint32_t current_count = motors[mtr].position.hencoder->Instance->CNT;
+    uint32_t prev_count = motors[mtr].position.prev_encoder_cnt;
+    direction_t mtr_dir = (direction_t) HAL_GPIO_ReadPin(motors[mtr].dir_ctrl.gpio_port, motors[mtr].dir_ctrl.gpio_pin);
 
-  // Need to account for possible roll over, check if direction is reverse
-  if (HAL_GPIO_ReadPin(motor->dir_ctrl.gpio_port, motor->dir_ctrl.gpio_pin) == GPIO_PIN_RESET) {
-    // Check if we rolled over if CNT is greater than prev_encoder_cnt when going reverse
-    if (current_count > prev_count) {
-      change_in_encoder = prev_count + ENCODER_TICKS_PER_REV - current_count;
+    /* Need to account for possible roll over, check if direction is reverse */
+    if (mtr_dir == REVERSE) {
+      /* Check if we rolled over if CNT is greater than prev_encoder_cnt when going reverse */
+      if (current_count > prev_count) {
+        change_in_encoder = current_count - (prev_count + ENCODER_TICKS_PER_REV);
+      }
+      else {
+        change_in_encoder = prev_count - current_count;
+      }
     }
+    /* Direction is forward */
     else {
-      change_in_encoder = current_count - prev_count;
+      /* Check if we rolled over if CNT is less than our prev_encoder_cnt when going forward */
+      if (current_count < prev_count) {
+        change_in_encoder = current_count + ENCODER_TICKS_PER_REV - prev_count;
+      }
+      else {
+        change_in_encoder = current_count - prev_count;
+      }
+    }
+    motors[mtr].position.prev_encoder_cnt = current_count;
+
+    float rotations =  change_in_encoder / ((float)(ENCODER_TICKS_PER_REV - 1));
+    /* Rotations per ms multiplied by ms per min */
+    motors[mtr].rpm = (rotations / MTR_RPM_TIMESCALE) * 60000;
+  }
+}
+
+/*-----------------------------------------------------------------------
+-   adjust_pwm
+-   Parameters:
+-     mtr_num: motor to adjust the pwm of
+-   Returns:
+-     bool: does it need to be adjusted again after this
+-   Description:
+-     Adjusts the pwm of a motor in small increments for a smooth ramp
+-     up and ramp down.
+-----------------------------------------------------------------------*/
+static bool adjust_pwm(mtr_num_t mtr_num) {
+  pwm_t *pwm           = &motors[mtr_num].pwm;
+  dir_ctrl_t *dir_ctrl = &motors[mtr_num].dir_ctrl;
+  
+  /* Check if we are going in the intended direction */
+  if (dir_ctrl->dir == dir_ctrl->dir_goal) {
+    /* Ramp up */
+    if (pwm->pwm_goal > pwm->pwm_val) {
+      /* Check if we can increment by max pwm ramp value */
+      if (pwm->pwm_goal - pwm->pwm_val >= mtr_pwm_ramp) {
+        pwm->pwm_val += mtr_pwm_ramp;
+      }
+      /* Otherwise our pwm value has hit the goal */
+      else {
+        pwm->pwm_val = pwm->pwm_goal;
+      }
+    }
+    /* Ramp down */
+    else if (pwm->pwm_goal < pwm->pwm_val) {
+      /* Check if we can decrement by max pwm ramp value */
+      if (pwm->pwm_val - pwm->pwm_goal >= mtr_pwm_ramp) {
+        pwm->pwm_val -= mtr_pwm_ramp;
+      }
+      /* Otherwise our pwm value has hit the goal */
+      else {
+        pwm->pwm_val = pwm->pwm_goal;
+      }
     }
   }
-  // Direction is forward
+  /* Our current direction is not our intended direction, we have to ramp down
+     until our pwm is 0, then change direction and ramp up to the goal */
   else {
-    // Check if we rolled over if CNT is less than our prev_encoder_cnt when going forward
-    if (motor->position.hencoder->Instance->CNT < motor->position.prev_encoder_cnt) {
-      change_in_encoder = current_count + ENCODER_TICKS_PER_REV - prev_count;
+    uint32_t pwm_diff = pwm->pwm_val - mtr_pwm_ramp;
+    /* If our pwm difference is 0, then all we need to do is change direction */
+    if (pwm_diff == 0) {
+      dir_ctrl->dir = dir_ctrl->dir_goal;
     }
+    /* Check if we loop around when decrementing by the max amount */
+    else if (pwm_diff > pwm->pwm_val) {
+      /* Direction can be changed since we looped around */
+      dir_ctrl->dir = dir_ctrl->dir_goal;
+      
+      /* Calculate the amount we can ramp up after changing directions */
+      uint32_t ramp_left_over = mtr_pwm_ramp - pwm->pwm_val;
+      /* Check if the left over amount allows us to reach our goal */
+      if (ramp_left_over >= pwm->pwm_goal) {
+        pwm->pwm_val = pwm->pwm_goal;
+      }
+      /* Otherwise we still have to ramp up to our goal */
+      else {
+        pwm->pwm_val = ramp_left_over;
+      }
+    }
+    /* We can ramp down by max amount */
     else {
-      change_in_encoder = current_count - prev_count;
+      pwm->pwm_val -= mtr_pwm_ramp;
     }
   }
-  motor->position.prev_encoder_cnt = current_count;
-
-  encoder_on_off(mtr_id, MTR_ON);
-  float rotations =  change_in_encoder / (float)(ENCODER_TICKS_PER_REV - 1);
-  // Rotations per ms multiplied by ms per min
-  motor->position.rpm = (rotations / MTR_RPM_TIMESCALE) * 60000;
-}
-
-/** See pwm_on_off, helper function to write cleaner code **/
-static void pwm_on_off_helper(mtr_id_t mtr_id, mtr_status_t mtr_status) {
-  motor_t * mtr = get_mtr(mtr_id);
-  if (mtr_status == MTR_OFF) {
-    HAL_TIM_PWM_Stop(mtr->pwm.hpwm, mtr->pwm.channel);
-  }
-  else if (mtr_status == MTR_ON) {
-    HAL_TIM_PWM_Start(mtr->pwm.hpwm, mtr->pwm.channel);
-  }
-}
-
-/** See encoder_on_off, helper function to write cleaner code **/
-static void encoder_on_off_helper(mtr_id_t mtr_id, mtr_status_t mtr_status) {
-  motor_t * mtr = get_mtr(mtr_id);
-  if (mtr_status == MTR_OFF) {
-    HAL_TIM_Encoder_Stop(mtr->position.hencoder, mtr->position.channel);
-  }
-  else if (mtr_status == MTR_ON) {
-    HAL_TIM_Encoder_Start(mtr->position.hencoder, mtr->position.channel);
-  }
+        
+  set_pwm(mtr_num, pwm->pwm_val);
+  set_dir(mtr_num, dir_ctrl->dir);
+  return (pwm->pwm_val == pwm->pwm_goal) && (dir_ctrl->dir == dir_ctrl->dir_goal);
 }
