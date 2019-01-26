@@ -1196,15 +1196,18 @@
         <group>
             <name>User</name>
             <group>
-                <name>Motors</name>
+                <name>Communication</name>
                 <file>
-                    <name>$PROJ_DIR$\..\..\Src\motor_control.c</name>
+                    <name>$PROJ_DIR$\..\..\Src\i2c_slave.c</name>
+                </file>
+                <file>
+                    <name>$PROJ_DIR$\..\..\Src\radio_control.c</name>
                 </file>
             </group>
             <group>
-                <name>Radio</name>
+                <name>Motors</name>
                 <file>
-                    <name>$PROJ_DIR$\..\..\Src\radio_control.c</name>
+                    <name>$PROJ_DIR$\..\..\Src\motor_control.c</name>
                 </file>
             </group>
             <file>
@@ -1214,7 +1217,13 @@
                 <name>$PROJ_DIR$\..\..\Src\can.c</name>
             </file>
             <file>
+                <name>$PROJ_DIR$\..\..\Src\crc.c</name>
+            </file>
+            <file>
                 <name>$PROJ_DIR$\..\..\Src\gpio.c</name>
+            </file>
+            <file>
+                <name>$PROJ_DIR$\..\..\Src\i2c.c</name>
             </file>
             <file>
                 <name>$PROJ_DIR$\..\..\Src\main.c</name>
@@ -1256,6 +1265,9 @@
                 <name>$PROJ_DIR$\..\..\Drivers\STM32F4xx_HAL_Driver\Src\stm32f4xx_hal_cortex.c</name>
             </file>
             <file>
+                <name>$PROJ_DIR$\..\..\Drivers\STM32F4xx_HAL_Driver\Src\stm32f4xx_hal_crc.c</name>
+            </file>
+            <file>
                 <name>$PROJ_DIR$\..\..\Drivers\STM32F4xx_HAL_Driver\Src\stm32f4xx_hal_dma.c</name>
             </file>
             <file>
@@ -1272,6 +1284,12 @@
             </file>
             <file>
                 <name>$PROJ_DIR$\..\..\Drivers\STM32F4xx_HAL_Driver\Src\stm32f4xx_hal_gpio.c</name>
+            </file>
+            <file>
+                <name>$PROJ_DIR$\..\..\Drivers\STM32F4xx_HAL_Driver\Src\stm32f4xx_hal_i2c.c</name>
+            </file>
+            <file>
+                <name>$PROJ_DIR$\..\..\Drivers\STM32F4xx_HAL_Driver\Src\stm32f4xx_hal_i2c_ex.c</name>
             </file>
             <file>
                 <name>$PROJ_DIR$\..\..\Drivers\STM32F4xx_HAL_Driver\Src\stm32f4xx_hal_pwr.c</name>
