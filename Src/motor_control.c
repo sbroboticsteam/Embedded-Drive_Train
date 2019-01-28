@@ -26,15 +26,10 @@
 /** Specifies how often to take motor RPM measurements in ms **/
 #define MTR_RPM_TIMESCALE	        ((uint16_t) 50)
 /** One full encoder revolution goes from 0 to 2047 **/
-#define ENCODER_TICKS_PER_REV		((uint16_t) 2048)
+#define ENCODER_TICKS_PER_REV		((uint16_t) 1024)
 /*-----------------------------------------------------------------------
 - Private Typedefs & Enumerations
 -----------------------------------------------------------------------*/
-typedef enum {
-  MOTOR_INIT,
-  MOTORS_RUN,
-} motor_state_t;
-
 typedef struct dir_ctrl {
   GPIO_TypeDef *        gpio_port;
   uint16_t 	        gpio_pin;
@@ -78,6 +73,8 @@ static bool adjust_pwm(mtr_num_t mtr_num);
 static void set_pwm(mtr_num_t mtr_num, uint32_t pwm);
 
 static void set_dir(mtr_num_t mtr_num, direction_t dir);
+
+static void motors_init(void);
 /*-----------------------------------------------------------------------
 - Private External References
 -----------------------------------------------------------------------*/
@@ -95,20 +92,16 @@ static void set_dir(mtr_num_t mtr_num, direction_t dir);
 -   Description:
 -    	The task that will be continously running to control the motors.
 -----------------------------------------------------------------------*/
-void motor_task(void) {
-  static motor_state_t motor_state = MOTOR_INIT;
+void motor_task(motor_state_t mtr_cmd) {
   static timer_t rpm_timer;
 
-  switch (motor_state) {
-    case MOTOR_INIT: {
+  switch (mtr_cmd) {
+    case MOTORS_INIT: {
       /* Set up the pwm and encoder timers for the motors and start them */
       motors_init();
 
       /* Set the rpm timer to expire in MTR_RPM_TIMESCALE ms from now */
       set_timer(&rpm_timer, MTR_RPM_TIMESCALE);
-
-      /* Motors are now operational */
-      motor_state = MOTORS_RUN;
       break;
     }
     case MOTORS_RUN: {
@@ -122,7 +115,11 @@ void motor_task(void) {
 
         /* Output of motor values for debugging purposes */
 #ifdef DEBUG
-        printf("Motor 0 RPM: %3.5f\n", motors[MTR_0].pid.rpm);
+        static uint8_t counter = 0;
+        if (counter++ == 20) {
+          printf("Motor 0 RPM: %4.5f, CNT: %d\n", motors[MTR_0].rpm, get_mtr_cnt(MTR_0));
+          counter = 0;
+        }
 #endif /* DEBUG */
       }
 
@@ -133,10 +130,10 @@ void motor_task(void) {
           /* Slightly adjust the pwm of that motor, if it needs to be adjusted
              again, set the timer */
           if (adjust_pwm(mtr)) {
-            set_timer(&motors[mtr].pwm.pwm_timer, mtr_pwm_period);
+            stop_timer(&motors[mtr].pwm.pwm_timer);
           }
           else {
-            stop_timer(&motors[mtr].pwm.pwm_timer);
+            set_timer(&motors[mtr].pwm.pwm_timer, mtr_pwm_period);
           }
         }
         /* else PWM is at the correct value */
@@ -145,65 +142,8 @@ void motor_task(void) {
       break;
     }
     default: {
-      /* Should never enter this, but if we do assume the worst and re-init */
-      motor_state = MOTOR_INIT;
       break;
     }
-  }
-}
-
-/*-----------------------------------------------------------------------
--   motors_init
--   Parameters:
--     void
--   Returns:
--     void
--   Description:
--    	Initializes all motor structs with their respective pwm timer,
--	encoder timer, and direction pin.
------------------------------------------------------------------------*/
-void motors_init(void) {
-  memset(motors, 0, sizeof(motors));
-
-  /* Set the port and pin used to control the direction of the motor */
-  motors[MTR_0].dir_ctrl.gpio_port = MTR0_DIR_GPIO_Port;
-  motors[MTR_0].dir_ctrl.gpio_pin  = MTR0_DIR_Pin;
-  /* Set the timer used to handle the encoder and its channel */
-  motors[MTR_0].position.hencoder = &htim4;
-  motors[MTR_0].position.channel = TIM_CHANNEL_1;
-  /* Set the channel of the pwm timer used for the motor */
-  motors[MTR_0].pwm.pwm_channel = TIM_CHANNEL_1;
-  motors[MTR_0].pwm.pwm_val = 0;
-
-  motors[MTR_1].dir_ctrl.gpio_port = MTR1_DIR_GPIO_Port;
-  motors[MTR_1].dir_ctrl.gpio_pin  = MTR1_DIR_Pin;
-  motors[MTR_1].position.hencoder = &htim3;
-  motors[MTR_1].position.channel = TIM_CHANNEL_1;
-  motors[MTR_1].pwm.pwm_channel = TIM_CHANNEL_2;
-  motors[MTR_1].pwm.pwm_val = 0;
-
-  motors[MTR_2].dir_ctrl.gpio_port = MTR2_DIR_GPIO_Port;
-  motors[MTR_2].dir_ctrl.gpio_pin  = MTR2_DIR_Pin;
-  motors[MTR_2].position.hencoder = &htim8;
-  motors[MTR_2].position.channel = TIM_CHANNEL_1;
-  motors[MTR_2].pwm.pwm_channel = TIM_CHANNEL_3;
-  motors[MTR_2].pwm.pwm_val = 0;
-
-  motors[MTR_3].dir_ctrl.gpio_port = MTR3_DIR_GPIO_Port;
-  motors[MTR_3].dir_ctrl.gpio_pin  = MTR3_DIR_Pin;
-  motors[MTR_3].position.hencoder = &htim1;
-  motors[MTR_3].position.channel = TIM_CHANNEL_1;
-  motors[MTR_3].pwm.pwm_channel = TIM_CHANNEL_4;
-  motors[MTR_3].pwm.pwm_val = 0;
-
-  /* Turn on PWM timers for all motors */
-  for (mtr_num_t mtr = MTR_0; mtr < MTR_COUNT; mtr++) {
-    HAL_TIM_PWM_Start(&htim2, motors[mtr].pwm.pwm_channel);
-  }
-
-  /* Turn on encoder timers for all motors */
-  for (mtr_num_t mtr = MTR_0; mtr < MTR_COUNT; mtr++) {
-    HAL_TIM_Encoder_Start(motors[mtr].position.hencoder, motors[mtr].position.channel);
   }
 }
 
@@ -255,11 +195,69 @@ void set_mtr_pwm_dir(mtr_num_t mtr_num, uint32_t pwm, direction_t dir) {
   /* These values are set as goals and we ramp to them using a configurable acceleration */
   motors[mtr_num].pwm.pwm_goal      = pwm;
   motors[mtr_num].dir_ctrl.dir_goal = dir;
+  
+  /* Begin the timer to ramp up the motor pwm */
+  set_timer(&motors[mtr_num].pwm.pwm_timer, mtr_pwm_period);
 }
 
 /*-----------------------------------------------------------------------
 - Private Functions
 -----------------------------------------------------------------------*/
+
+/*-----------------------------------------------------------------------
+-   motors_init
+-   Parameters:
+-     void
+-   Returns:
+-     void
+-   Description:
+-    	Initializes all motor structs with their respective pwm timer,
+-	encoder timer, and direction pin.
+-----------------------------------------------------------------------*/
+static void motors_init(void) {
+  memset(motors, 0, sizeof(motors));
+
+  /* Set the port and pin used to control the direction of the motor */
+  motors[MTR_0].dir_ctrl.gpio_port = MTR0_DIR_GPIO_Port;
+  motors[MTR_0].dir_ctrl.gpio_pin  = MTR0_DIR_Pin;
+  /* Set the timer used to handle the encoder and its channel */
+  motors[MTR_0].position.hencoder = &htim4;
+  motors[MTR_0].position.channel = TIM_CHANNEL_1;
+  /* Set the channel of the pwm timer used for the motor */
+  motors[MTR_0].pwm.pwm_channel = TIM_CHANNEL_1;
+  motors[MTR_0].pwm.pwm_val = 0;
+
+  motors[MTR_1].dir_ctrl.gpio_port = MTR1_DIR_GPIO_Port;
+  motors[MTR_1].dir_ctrl.gpio_pin  = MTR1_DIR_Pin;
+  motors[MTR_1].position.hencoder = &htim3;
+  motors[MTR_1].position.channel = TIM_CHANNEL_1;
+  motors[MTR_1].pwm.pwm_channel = TIM_CHANNEL_2;
+  motors[MTR_1].pwm.pwm_val = 0;
+
+  motors[MTR_2].dir_ctrl.gpio_port = MTR2_DIR_GPIO_Port;
+  motors[MTR_2].dir_ctrl.gpio_pin  = MTR2_DIR_Pin;
+  motors[MTR_2].position.hencoder = &htim8;
+  motors[MTR_2].position.channel = TIM_CHANNEL_1;
+  motors[MTR_2].pwm.pwm_channel = TIM_CHANNEL_3;
+  motors[MTR_2].pwm.pwm_val = 0;
+
+  motors[MTR_3].dir_ctrl.gpio_port = MTR3_DIR_GPIO_Port;
+  motors[MTR_3].dir_ctrl.gpio_pin  = MTR3_DIR_Pin;
+  motors[MTR_3].position.hencoder = &htim1;
+  motors[MTR_3].position.channel = TIM_CHANNEL_1;
+  motors[MTR_3].pwm.pwm_channel = TIM_CHANNEL_4;
+  motors[MTR_3].pwm.pwm_val = 0;
+
+  /* Turn on PWM timers for all motors */
+  for (mtr_num_t mtr = MTR_0; mtr < MTR_COUNT; mtr++) {
+    HAL_TIM_PWM_Start(&htim2, motors[mtr].pwm.pwm_channel);
+  }
+
+  /* Turn on encoder timers for all motors */
+  for (mtr_num_t mtr = MTR_0; mtr < MTR_COUNT; mtr++) {
+    HAL_TIM_Encoder_Start(motors[mtr].position.hencoder, motors[mtr].position.channel);
+  }
+}
 
 /*-----------------------------------------------------------------------
 -   set_dir
@@ -352,7 +350,7 @@ static void update_rpm(void) {
 
     float rotations =  change_in_encoder / ((float)(ENCODER_TICKS_PER_REV - 1));
     /* Rotations per ms multiplied by ms per min */
-    motors[mtr].rpm = (rotations / MTR_RPM_TIMESCALE) * 60000;
+    motors[mtr].rpm = (rotations / (float)MTR_RPM_TIMESCALE) * 60000;
   }
 }
 

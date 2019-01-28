@@ -42,6 +42,7 @@
 #define __MAIN_H__
 
 /* Includes ------------------------------------------------------------------*/
+#include "stm32f4xx_hal.h"
 
 /* USER CODE BEGIN Includes */
 
@@ -49,8 +50,10 @@
 
 /* Private define ------------------------------------------------------------*/
 
-#define THROTTLE_INPUT_Pin GPIO_PIN_0
-#define THROTTLE_INPUT_GPIO_Port GPIOC
+#define THROTTLE_L_Pin GPIO_PIN_0
+#define THROTTLE_L_GPIO_Port GPIOC
+#define THROTTLE_R_Pin GPIO_PIN_1
+#define THROTTLE_R_GPIO_Port GPIOC
 #define MTR0_PWM_Pin GPIO_PIN_0
 #define MTR0_PWM_GPIO_Port GPIOA
 #define MTR1_PWM_Pin GPIO_PIN_1

@@ -15,12 +15,12 @@
         <stlinkserialNo>67133556</stlinkserialNo>
         <stlinkfoundProbes />
         <stlinkResetStyle>0</stlinkResetStyle>
-        <stlinkResetStrategy>2</stlinkResetStrategy>
+        <stlinkResetStrategy>0</stlinkResetStrategy>
         <CStepIntDis>_ 0</CStepIntDis>
         <LeaveTargetRunning>_ 0</LeaveTargetRunning>
     </StLinkDriver>
     <DebugChecksum>
-        <Checksum>3114546611</Checksum>
+        <Checksum>4101616646</Checksum>
     </DebugChecksum>
     <Exceptions>
         <StopOnUncaught>_ 0</StopOnUncaught>
@@ -51,7 +51,7 @@
         <DataLogMode>0</DataLogMode>
         <ITMportsEnable>0</ITMportsEnable>
         <ITMportsTermIO>0</ITMportsTermIO>
-        <ITMportsLogFile>0</ITMportsLogFile>
+        <ITMportsLogFile>1</ITMportsLogFile>
         <ITMlogFile>$PROJ_DIR$\ITM.log</ITMlogFile>
     </SWOTraceHWSettings>
     <Trace2>
@@ -59,9 +59,9 @@
         <ShowSource>0</ShowSource>
     </Trace2>
     <SWOTraceWindow>
-        <PcSampling>0</PcSampling>
-        <InterruptLogs>0</InterruptLogs>
-        <ForcedTimeStamps>0</ForcedTimeStamps>
+        <PcSampling>1</PcSampling>
+        <InterruptLogs>1</InterruptLogs>
+        <ForcedTimeStamps>1</ForcedTimeStamps>
         <EventCPI>0</EventCPI>
         <EventEXC>0</EventEXC>
         <EventFOLD>0</EventFOLD>
@@ -125,7 +125,8 @@
         <mode>0</mode>
     </DisassembleMode>
     <Breakpoints2>
-        <Count>0</Count>
+        <Bp0>_ 1 "EMUL_CODE" "{$PROJ_DIR$\..\..\Src\application.c}.61.7" 0 0 1 "" 0 "" 0</Bp0>
+        <Count>1</Count>
     </Breakpoints2>
     <Aliases>
         <Count>0</Count>

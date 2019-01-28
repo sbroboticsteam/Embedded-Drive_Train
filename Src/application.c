@@ -34,7 +34,7 @@
 /*-----------------------------------------------------------------------
 - Public Functions
 -----------------------------------------------------------------------*/
-
+#include <stdbool.h>
 /*-----------------------------------------------------------------------
 -   app_run
 -   Parameters:
@@ -45,18 +45,30 @@
 -    	Our main loop for the application code.
 -----------------------------------------------------------------------*/
 void app_run(void) {
-  motors_init();
-  uint32_t pwm_val = 3000;
-
+  uint32_t pwm_val = 1000;
+  direction_t dir = FORWARD;
+  motor_task(MOTORS_INIT);
+  
   for (uint8_t i = 0; i < MTR_COUNT; i++) {
-    set_mtr_pwm_dir( (mtr_num_t) i, pwm_val, FORWARD);
+    set_mtr_pwm_dir( (mtr_num_t) i, pwm_val, dir);
   }
 
+  bool change = false;
   while (1) {
-    motor_task();
+    motor_task(MOTORS_RUN);
+    
+    if (change) {
+      set_mtr_pwm_dir(MTR_0, pwm_val, dir);
+    }
   }
 }
 
+void HAL_I2C_SlaveRxCpltCallback(I2C_HandleTypeDef *hi2c) {
+  /* I2C1 is the bus connected to the jetson */
+  if (hi2c->Instance == I2C1) {
+    jetson_rx_handle();
+  }
+}
 /*-----------------------------------------------------------------------
 - Private Functions
 -----------------------------------------------------------------------*/

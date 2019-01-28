@@ -40,12 +40,14 @@
 #include "main.h"
 #include "stm32f4xx_hal.h"
 #include "can.h"
+#include "crc.h"
+#include "i2c.h"
 #include "tim.h"
 #include "usart.h"
 #include "gpio.h"
 
 /* USER CODE BEGIN Includes */
-
+#include "application.h"
 /* USER CODE END Includes */
 
 /* Private variables ---------------------------------------------------------*/
@@ -101,11 +103,14 @@ int main(void)
   MX_TIM4_Init();
   MX_TIM8_Init();
   MX_USART2_UART_Init();
-  MX_CAN1_Init();
+  //MX_CAN1_Init();
   MX_TIM2_Init();
   MX_TIM6_Init();
+  MX_I2C1_Init();
+  MX_CRC_Init();
   /* USER CODE BEGIN 2 */
-
+  /* Run our own main loop to escape the initialization code */
+  app_run();
   /* USER CODE END 2 */
 
   /* Infinite loop */

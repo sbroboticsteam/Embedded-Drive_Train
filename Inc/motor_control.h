@@ -15,7 +15,6 @@
 #include <stdint.h>
 #include "stm32f446xx.h"
 #include "tim.h"
-#include "arm_math.h"
 /*-----------------------------------------------------------------------
 - Public Defines & Macros
 -----------------------------------------------------------------------*/
@@ -35,6 +34,11 @@ typedef enum mtr_num {
   MTR_2 = 2,
   MTR_3 = 3,
 } mtr_num_t;
+
+typedef enum {
+  MOTORS_INIT,
+  MOTORS_RUN,
+} motor_state_t;
 /*-----------------------------------------------------------------------
 - Public External References
 -----------------------------------------------------------------------*/
@@ -42,8 +46,7 @@ typedef enum mtr_num {
 /*-----------------------------------------------------------------------
 - Public Function Prototypes
 -----------------------------------------------------------------------*/
-void motor_task(void);
-void motors_init(void);
+void motor_task(motor_state_t mtr_cmd);
 uint16_t get_mtr_cnt(mtr_num_t mtr_num);
 void set_mtr_pwm_dir(mtr_num_t mtr_num, uint32_t pwm, direction_t dir);
 float get_mtr_rpm(mtr_num_t mtr_num);

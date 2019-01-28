@@ -78,10 +78,16 @@ void MX_GPIO_Init(void)
   HAL_GPIO_WritePin(MTR3_DIR_GPIO_Port, MTR3_DIR_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin : PtPin */
-  GPIO_InitStruct.Pin = THROTTLE_INPUT_Pin;
+  GPIO_InitStruct.Pin = THROTTLE_L_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING_FALLING;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(THROTTLE_INPUT_GPIO_Port, &GPIO_InitStruct);
+  HAL_GPIO_Init(THROTTLE_L_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : PtPin */
+  GPIO_InitStruct.Pin = THROTTLE_R_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(THROTTLE_R_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pin : PtPin */
   GPIO_InitStruct.Pin = MTR1_DIR_Pin;

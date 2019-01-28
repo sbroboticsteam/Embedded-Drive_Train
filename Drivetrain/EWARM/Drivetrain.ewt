@@ -1205,6 +1205,12 @@
                 </file>
             </group>
             <group>
+                <name>General</name>
+                <file>
+                    <name>$PROJ_DIR$\..\..\Src\timing.c</name>
+                </file>
+            </group>
+            <group>
                 <name>Motors</name>
                 <file>
                     <name>$PROJ_DIR$\..\..\Src\motor_control.c</name>

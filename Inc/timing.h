@@ -1,5 +1,5 @@
 /*-----------------------------------------------------------------------
--   File Name:	  timing.c
+-   File Name:	  timing.h
 -   Description:  Timing functionality for general timers
 -   Date:	  1/14/2019
 -   Name:	  John Boccio
@@ -32,21 +32,9 @@ typedef struct {
 /*-----------------------------------------------------------------------
 - Public Function Prototypes
 -----------------------------------------------------------------------*/
-inline void set_timer(timer_t *timer, uint32_t duration) {
-  timer->expire_time = HAL_GetTick() + duration;
-  timer->enabled = 1;
-}
-
-inline void stop_timer(timer_t *timer) {
-  timer->enabled = 0;
-}
-
-inline bool timer_running(timer_t *timer) {
-  return timer->enabled;
-}
-
-inline bool timeout(timer_t *timer) {
-  return timer->enabled && (timer->expire_time <= HAL_GetTick());
-}
+void set_timer(timer_t *timer, uint32_t duration);
+void stop_timer(timer_t *timer);
+bool timer_running(timer_t *timer);
+bool timeout(timer_t *timer);
 
 #endif /* __TIMING_H */
