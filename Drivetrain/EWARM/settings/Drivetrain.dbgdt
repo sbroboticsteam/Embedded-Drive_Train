@@ -943,7 +943,7 @@
                 <expressions>
                     <item>motors[mtr]</item>
                     <item>motors</item>
-                    <item></item>
+                    <item />
                 </expressions>
                 <col-names>
                     <item>Expression</item>
@@ -1039,7 +1039,7 @@
                 <expressions>
                     <item>pwm_val</item>
                     <item>motors[mtr]</item>
-                    <item></item>
+                    <item />
                 </expressions>
                 <col-names>
                     <item>Expression</item>
